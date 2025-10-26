@@ -6,10 +6,10 @@ import { signToken } from '../utils/jwt'
 export const register = async (req: Request, res: Response) => {
     try {
         const { email, name, password } = req.body
-        if (!email || !password)
+        if (!email || !password || !name)
             return res
                 .status(400)
-                .json({ message: 'Email & password required' })
+                .json({ message: 'Email, name & password required' })
 
         const existing = await User.findOne({ email })
         if (existing)

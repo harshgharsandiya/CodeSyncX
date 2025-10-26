@@ -1,4 +1,4 @@
-export interface User {
+interface User {
     _id: string
     email: string
     name: string
@@ -9,5 +9,8 @@ export interface User {
         providerId: string
     }[]
     roles: ('user' | 'admin')[]
-    createdAt: string // ISO date string
+    createdAt: string
+    updatedAt: string
 }
+
+export default User

@@ -1,19 +1,20 @@
-export const API_BASE = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL as string
+import axios from 'axios'
 
-export async function apiFetch(
-    path: string,
-    options: RequestInit = {}
-): Promise<any> {
-    const res = await fetch(`${API_BASE}${path}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            ...(options.headers || {}),
-        },
-        credentials: 'include', // in case you later use cookies
-        ...options,
-    })
+// IMPORTANT: Replace this with your actual backend URL
+const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.message || 'Request failed')
-    return data
-}
+const api = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+})
+
+/*
+  Note: We're setting the Authorization header dynamically 
+  in the AuthContext (src/context/AuthContext.tsx)
+  when the user logs in or on initial app load.
+*/
+
+export default api

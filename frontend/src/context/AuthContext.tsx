@@ -1,105 +1,133 @@
 'use client'
 
-import React, {
+import {
     createContext,
-    useContext,
+    ReactNode,
+    useCallback,
     useEffect,
     useState,
-    useCallback,
 } from 'react'
-import { apiFetch } from '@/lib/api'
+import { useUserStore, UserState } from '@/store/user.store'
+import { IUser } from '@/types'
+import api from '@/lib/api'
+import Cookies from 'js-cookie'
+import { useRouter } from 'next/navigation'
 
-export type User = {
-    _id: string
-    email: string
-    name: string
-    avatarUrl?: string
-    roles: string[]
-}
-
-interface AuthContextType {
-    user: User | null
-    loading: boolean
+// Define the shape of the context
+interface AuthContextType extends Omit<UserState, 'setUser' | 'clearUser'> {
     login: (email: string, password: string) => Promise<void>
-    register: (email: string, name: string, password: string) => Promise<void>
+    register: (name: string, email: string, password: string) => Promise<void>
     logout: () => void
-    refreshUser: () => Promise<void>
+    loading: boolean
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+// Create the context
+export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-    children,
-}) => {
-    const [user, setUser] = useState<User | null>(null)
+// Define the AuthProvider props
+interface AuthProviderProps {
+    children: ReactNode
+}
+
+const AUTH_TOKEN_COOKIE = 'auth_token'
+
+export const AuthProvider = ({ children }: AuthProviderProps) => {
+    const { user, token, setUser, clearUser } = useUserStore()
     const [loading, setLoading] = useState(true)
+    const router = useRouter()
 
-    const fetchMe = useCallback(async () => {
-        try {
-            const token = localStorage.getItem('token')
-            if (!token) {
-                setUser(null)
+    // Function to fetch 'me' endpoint
+    const fetchUser = useCallback(
+        async (authToken: string) => {
+            try {
+                api.defaults.headers.common[
+                    'Authorization'
+                ] = `Bearer ${authToken}`
+                const res = await api.get('/auth/me')
+                setUser(res.data.user, authToken)
+            } catch (error) {
+                // If token is invalid, clear everything
+                clearUser()
+                Cookies.remove(AUTH_TOKEN_COOKIE)
+                api.defaults.headers.common['Authorization'] = undefined
+            } finally {
                 setLoading(false)
-                return
             }
+        },
+        [setUser, clearUser]
+    )
 
-            const res = await fetch(
-                `${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL}/me`,
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            )
-            const data = await res.json()
-            if (res.ok) setUser(data.user)
-            else setUser(null)
-        } catch (error) {
-            setUser(null)
-        } finally {
+    // Effect to load user on initial mount
+    useEffect(() => {
+        const storedToken = Cookies.get(AUTH_TOKEN_COOKIE)
+        if (storedToken) {
+            fetchUser(storedToken)
+        } else {
             setLoading(false)
         }
-    }, [])
+    }, [fetchUser])
 
-    useEffect(() => {
-        fetchMe()
-    }, [fetchMe])
-
+    // Login function
     const login = async (email: string, password: string) => {
-        const { token, user } = await apiFetch('/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password }),
-        })
-        localStorage.setItem('token', token)
-        setUser(user)
+        try {
+            const res = await api.post('/auth/login', { email, password })
+            const {
+                token: authToken,
+                user: loggedInUser,
+            }: { token: string; user: IUser } = res.data
+
+            Cookies.set(AUTH_TOKEN_COOKIE, authToken, {
+                expires: 7,
+                secure: process.env.NODE_ENV === 'production',
+            })
+            api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`
+            setUser(loggedInUser, authToken)
+        } catch (err: any) {
+            const errorMsg = err.response?.data?.message || 'Login failed'
+            throw new Error(errorMsg)
+        }
     }
 
-    const register = async (email: string, name: string, password: string) => {
-        const { token, user } = await apiFetch('/register', {
-            method: 'POST',
-            body: JSON.stringify({ email, name, password }),
-        })
-        localStorage.setItem('token', token)
-        setUser(user)
+    // Register function
+    const register = async (name: string, email: string, password: string) => {
+        try {
+            const res = await api.post('/auth/register', {
+                name,
+                email,
+                password,
+            })
+            const {
+                token: authToken,
+                user: registeredUser,
+            }: { token: string; user: IUser } = res.data
+
+            Cookies.set(AUTH_TOKEN_COOKIE, authToken, {
+                expires: 7,
+                secure: process.env.NODE_ENV === 'production',
+            })
+            api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`
+            setUser(registeredUser, authToken)
+        } catch (err: any) {
+            const errorMsg =
+                err.response?.data?.message || 'Registration failed'
+            throw new Error(errorMsg)
+        }
     }
 
+    // Logout function
     const logout = () => {
-        localStorage.removeItem('token')
-        setUser(null)
+        clearUser()
+        Cookies.remove(AUTH_TOKEN_COOKIE)
+        delete api.defaults.headers.common['Authorization']
+        // Redirect to home and refresh to ensure middleware catches up
+        router.push('/')
     }
 
-    const value: AuthContextType = {
-        user,
-        loading,
-        login,
-        register,
-        logout,
-        refreshUser: fetchMe,
-    }
-
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export const useAuth = () => {
-    const context = useContext(AuthContext)
-    if (!context) throw new Error('useAuth must be used within an AuthProvider')
-    return context
+    return (
+        <AuthContext.Provider
+            value={{ user, token, login, register, logout, loading }}
+        >
+            {children}
+        </AuthContext.Provider>
+    )
 }

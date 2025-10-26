@@ -12,7 +12,6 @@ export interface IUser extends Document {
     password?: string
     providers?: Provider[]
     roles: string[]
-    createdAt: Date
 }
 
 const ProviderSchema = new Schema<Provider>({
@@ -28,9 +27,8 @@ const UserSchema = new Schema<IUser>(
         password: String, // hashed if present
         providers: [ProviderSchema],
         roles: { type: [String], default: ['user'] },
-        createdAt: { type: Date, default: Date.now },
     },
-    { versionKey: false }
+    { versionKey: false, timestamps: true }
 )
 
 export const User = mongoose.model<IUser>('User', UserSchema)
